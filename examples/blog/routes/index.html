@@ -1,0 +1,22 @@
+---
+template: default.html
+---
+
+{{define "body"}}
+<h1>
+    Welcome to this fine blog
+</h1>
+
+<p>
+This is an example of a typical website structure for a blog.
+</p>
+
+<h2>
+    Here is the latest post
+</h2>
+
+{{with index (.Routes | filterFilePath "**/posts/*.md" | sortDesc "date") 0}}
+<a href={{.Href}}>{{.Meta.title}}</a>
+{{end}}
+
+{{end}}

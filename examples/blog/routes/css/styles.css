@@ -1,0 +1,36 @@
+html, body {
+    padding: 0;
+    margin: 0;
+    font-family: BlinkMacSystemFont, -apple-system, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif !important;
+}
+
+pre {
+    padding: 12px;
+}
+
+.container {
+    max-width: 80rem;
+    margin: 0 auto;
+}
+
+.navbar {
+    border-bottom: 1px solid #888;
+}
+
+.navbar>ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: row;
+}
+
+.navbar>ul>li {
+    padding: 16px;
+}
+
+.brand>a {
+    color: black;
+    text-decoration: none;
+    font-weight: bold;
+}

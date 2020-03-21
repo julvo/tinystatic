@@ -1,0 +1,18 @@
+---
+template: default.html
+---
+
+{{define "body"}}
+<h1>Posts</h1>
+
+<ul>
+{{range .Routes | filterFilePath "**/posts/*.md" | sortDesc "date" | limit 10}}
+    <li>
+        <a href={{.Href}}>
+            {{index .Meta "title"}}
+        </a>
+    </li>
+{{end}}
+</ul>
+
+{{end}}
