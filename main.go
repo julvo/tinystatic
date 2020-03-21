@@ -36,11 +36,12 @@ func main() {
 	}
 
 	log.Println("Writing output to", outputDir)
-	for _, r := range rootRoute.AllRoutes() {
+	allRoutes := rootRoute.AllRoutes()
+	for _, r := range allRoutes {
 		if r.Href != "" {
 			log.Println("∟", r.FilePath, "->", r.Href)
 		}
-		if err := r.Generate(outputDir); err != nil {
+		if err := r.Generate(outputDir, allRoutes); err != nil {
 			log.Fatalln(err)
 		}
 	}

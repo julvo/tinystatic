@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/yuin/goldmark"
@@ -24,7 +25,7 @@ type Route struct {
 	Meta     map[string]interface{}
 }
 
-func (r *Route) Generate(outputDir string) error {
+func (r *Route) Generate(outputDir string, allRoutes []Route) error {
 	if r.Href == "" {
 		return nil
 	}
@@ -72,7 +73,19 @@ func (r *Route) Generate(outputDir string) error {
 				return err
 			}
 
-			tmpl, err := template.ParseFiles(append([]string{tmplPath}, partials...)...)
+			tmpl := template.New(filepath.Base(tmplPath))
+			tmpl = tmpl.Funcs(map[string]interface{}{
+				"sortAsc":        sortAsc,
+				"sortDesc":       sortDesc,
+				"limit":          limit,
+				"offset":         offset,
+				"filter":         filter,
+				"filterHref":     filterHref,
+				"filterFileName": filterFileName,
+				"filterFilePath": filterFilePath,
+			})
+
+			tmpl, err = tmpl.ParseFiles(append([]string{tmplPath}, partials...)...)
 			if err != nil {
 				return err
 			}
@@ -86,8 +99,14 @@ func (r *Route) Generate(outputDir string) error {
 				return err
 			}
 
-			// TODO more context, e.g. other routes
-			if err := tmpl.Execute(dstFile, r.Meta); err != nil {
+			tmplCtx := map[string]interface{}{}
+			for k, v := range r.Meta {
+				tmplCtx[k] = v
+			}
+			tmplCtx["Route"] = r
+			tmplCtx["Routes"] = allRoutes
+
+			if err := tmpl.Execute(dstFile, tmplCtx); err != nil {
 				return err
 			}
 		}
@@ -191,4 +210,96 @@ func filePathToHref(fpath string) string {
 
 func isIndexFile(fileInfo os.FileInfo) bool {
 	return strings.HasPrefix(fileInfo.Name(), "index.")
+}
+
+func sortAsc(sortBy string, routes []Route) []Route {
+	sorted := make([]Route, len(routes))
+	copy(sorted, routes)
+	sort.Slice(sorted, func(i, j int) bool { return fmt.Sprint(routes[i].Meta[sortBy]) < fmt.Sprint(routes[j].Meta[sortBy]) })
+	return sorted
+}
+
+func sortDesc(sortBy string, routes []Route) []Route {
+	sorted := make([]Route, len(routes))
+	copy(sorted, routes)
+	sort.Slice(sorted, func(i, j int) bool { return fmt.Sprint(routes[i].Meta[sortBy]) > fmt.Sprint(routes[j].Meta[sortBy]) })
+	return sorted
+}
+
+func limit(limit int, routes []Route) []Route {
+	if limit >= len(routes) {
+		return routes
+	}
+	return routes[:limit]
+}
+
+func offset(offset int, routes []Route) []Route {
+	if offset >= len(routes) {
+		return []Route{}
+	}
+	return routes[offset:]
+}
+
+func filter(metaKey, metaPattern string, routes []Route) []Route {
+	filtered := []Route{}
+	for _, r := range routes {
+		match, err := filepath.Match(metaPattern, fmt.Sprint(r.Meta[metaKey]))
+		if err != nil {
+			fmt.Println("Warning in Filter: Could not match", metaPattern, "with", r.Meta[metaKey])
+			continue
+		}
+		if match {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
+func filterHref(hrefPattern string, routes []Route) []Route {
+	filtered := []Route{}
+	for _, r := range routes {
+		match, err := filepath.Match(hrefPattern, r.Href)
+		if err != nil {
+			fmt.Println("Warning in FilterHref: Could not match", hrefPattern, "with", r.Href)
+			continue
+		}
+		if match {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return filtered
+}
+
+func filterFilePath(filePathPattern string, routes []Route) []Route {
+	filtered := []Route{}
+	for _, r := range routes {
+		match, err := filepath.Match(filePathPattern, r.FilePath)
+		if err != nil {
+			fmt.Println("Warning in FilterFilePath: Could not match", filePathPattern, "with", r.FilePath)
+			continue
+		}
+		if match {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return filtered
+}
+
+func filterFileName(fileNamePattern string, routes []Route) []Route {
+	filtered := []Route{}
+	for _, r := range routes {
+		fname := filepath.Base(r.FilePath)
+		match, err := filepath.Match(fileNamePattern, fname)
+		if err != nil {
+			fmt.Println("Warning in FilterFileName: Could not match", fileNamePattern, "with", fname)
+			continue
+		}
+		if match {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return filtered
 }
