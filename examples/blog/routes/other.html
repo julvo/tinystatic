@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    {{template "head" .}}
+    </head>
+
+    <body>
+        <div style="padding: 16px">
+            <a href="/"><- Home</a>
+
+            <h1>
+                This is some other route
+            </h1>
+            <p>
+                In this route, we are not using a template, but we have still access to partials and the render context, e.g. `.Routes`.
+            </p>
+
+
+            <h2>
+                A list of posts:
+            </h2>
+            <ul>
+            {{range .Routes | filterHref "/posts/*"}} 
+            <li>
+                <a href={{.Href}}>{{.Meta.title}}</a>
+            </li>
+
+            {{end}}
+            </ul>
+        </div>
+    </body>
+</html>
