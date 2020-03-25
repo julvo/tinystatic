@@ -129,7 +129,7 @@ template: default.html
 
 When running `tinystatic` again, the output is identical to the previous output, but we consolidated the HTML skeleton into a single place.
 
-Defining a template in the meta data at the top of a file activates the templating engine. Inside the page, we have access to the meta data defined at the top of the file, a struct `Route` with fields `Route.Href`, `Route.FilePath` and `Route.Meta` which is again a map of meta data defined at the top of the file. Moreover, we can access `Routes`, which is a slice (think: array for people new to Go) of all routes, which we will learn more about further down.
+As seen just now, we can specify a template to render our content into by providing a template name in the meta data at the top of a file. We can also include other templates (see below) and use Go's template pipelines. While rendering, we have access to the meta data defined at the top of the file, a struct `Route` with fields `Route.Href`, `Route.FilePath` and `Route.Meta` which is again a map of meta data defined at the top of the file. Moreover, we can access `Routes`, which is a slice (think: array for people new to Go) of all routes, which we will learn more about further down.  
 
 Let's use this meta data together with Go's templating primitives to change the page title depending on the current page. For this, we change the meta data in `routes/about.html` to
 ```

@@ -62,53 +62,56 @@ func (r *Route) Generate(outputDir string, allRoutes []Route) error {
 		defer dstFile.Close()
 
 		tmplName, useTmpl := r.Meta["template"]
-		if !useTmpl {
-			if _, err := dstFile.Write(src); err != nil {
-				return err
-			}
+		partials, err := filepath.Glob(filepath.Join(partialDir, "*.html"))
+		if err != nil {
+			return err
+		}
+
+		var tmplFiles []string
+		var tmplPath string
+		if useTmpl {
+			tmplPath = filepath.Join(templateDir, fmt.Sprint(tmplName))
+			tmplFiles = append([]string{tmplPath}, partials...)
 		} else {
-			tmplPath := filepath.Join(templateDir, fmt.Sprint(tmplName))
-			partials, err := filepath.Glob(filepath.Join(partialDir, "*.html"))
-			if err != nil {
-				return err
-			}
+			tmplPath = r.FilePath
+			tmplFiles = partials
+		}
 
-			tmpl := template.New(filepath.Base(tmplPath))
-			tmpl = tmpl.Funcs(map[string]interface{}{
-				"sortAsc":        sortAsc,
-				"sortDesc":       sortDesc,
-				"limit":          limit,
-				"offset":         offset,
-				"filter":         filter,
-				"filterHref":     filterHref,
-				"filterFileName": filterFileName,
-				"filterFilePath": filterFilePath,
-			})
+		tmpl := template.New(filepath.Base(tmplPath))
+		tmpl = tmpl.Funcs(map[string]interface{}{
+			"sortAsc":        sortAsc,
+			"sortDesc":       sortDesc,
+			"limit":          limit,
+			"offset":         offset,
+			"filter":         filter,
+			"filterHref":     filterHref,
+			"filterFileName": filterFileName,
+			"filterFilePath": filterFilePath,
+		})
 
-			tmpl, err = tmpl.ParseFiles(append([]string{tmplPath}, partials...)...)
-			if err != nil {
-				return err
-			}
+		tmpl, err = tmpl.ParseFiles(tmplFiles...)
+		if err != nil {
+			return err
+		}
 
-			if strings.HasPrefix(string(src), "---") {
-				src = []byte(strings.SplitN(string(src), "---", 3)[2])
-			}
+		if strings.HasPrefix(string(src), "---") {
+			src = []byte(strings.SplitN(string(src), "---", 3)[2])
+		}
 
-			tmpl, err = tmpl.Parse(string(src))
-			if err != nil {
-				return err
-			}
+		tmpl, err = tmpl.Parse(string(src))
+		if err != nil {
+			return err
+		}
 
-			tmplCtx := map[string]interface{}{}
-			for k, v := range r.Meta {
-				tmplCtx[k] = v
-			}
-			tmplCtx["Route"] = r
-			tmplCtx["Routes"] = allRoutes
+		tmplCtx := map[string]interface{}{}
+		for k, v := range r.Meta {
+			tmplCtx[k] = v
+		}
+		tmplCtx["Route"] = r
+		tmplCtx["Routes"] = allRoutes
 
-			if err := tmpl.Execute(dstFile, tmplCtx); err != nil {
-				return err
-			}
+		if err := tmpl.Execute(dstFile, tmplCtx); err != nil {
+			return err
 		}
 
 	default:
