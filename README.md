@@ -10,8 +10,8 @@ The concept of tinystatic is simple: From every file in an input directory, crea
 
 ### Pre-built binaries
 Download the tinystatic binary for your operating system:
-- [Linux](https://github.com/julvo/tinystatic/releases/download/v0.0.2/tinystatic_linux_amd64) 
-- [macOS](https://github.com/julvo/tinystatic/releases/download/v0.0.2/tinystatic_macos_darwin_amd64) 
+- [Linux](https://github.com/julvo/tinystatic/releases/download/v0.0.3/tinystatic_linux_amd64) 
+- [macOS](https://github.com/julvo/tinystatic/releases/download/v0.0.3/tinystatic_macos_darwin_amd64) 
 
 Optionally, add the binary to your shell path, by either placing the binary into an existing directory like `/usr/bin` or by adding the parent directory of the binary to your path variable.
 
