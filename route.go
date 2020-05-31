@@ -89,9 +89,11 @@ func (r *Route) Generate(outputDir string, allRoutes []Route) error {
 			"filterFilePath": filterFilePath,
 		})
 
-		tmpl, err = tmpl.ParseFiles(tmplFiles...)
-		if err != nil {
-			return err
+		if len(tmplFiles) > 0 {
+			tmpl, err = tmpl.ParseFiles(tmplFiles...)
+			if err != nil {
+				return err
+			}
 		}
 
 		if strings.HasPrefix(string(src), "---") {
