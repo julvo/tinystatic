@@ -1,0 +1,8 @@
+---
+template: default.html
+tag: |
+  {{ .Routes | fn "files => Array.from(files.reduce((tags, file) => {file.Meta?.tags?.forEach(tag => tags.add(tag.toLowerCase())); return tags}, new Set()))" }}
+---
+{{define "body"}}
+Hello {{.Route.Meta.tag | title}}
+{{end}}

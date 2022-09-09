@@ -7,6 +7,18 @@ template: default.html
     Welcome to this fine blog
 </h1>
 
+<div>
+    <ul>
+    {{range .Routes | fn "routes => Array.from(routes.reduce((tags, route) => {route.Meta?.tags?.forEach(tag => tags.add(tag)); return tags}, new Set()))"}}
+    <li>
+        <a href="/{{. | lower }}">
+                {{.}}
+        </a>
+    </li>
+    {{end}}
+    </ul>
+</div>
+
 <p>
 This is an example of a typical website structure for a blog.
 </p>

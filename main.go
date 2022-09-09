@@ -35,6 +35,10 @@ func main() {
 		log.Fatalln(err)
 	}
 
+	if err := ExpandRoutes(&rootRoute); err != nil {
+		log.Fatalln(err)
+	}
+
 	log.Println("Writing output to", outputDir)
 	allRoutes := rootRoute.AllRoutes()
 	for _, r := range allRoutes {

@@ -2,14 +2,19 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/Masterminds/sprig/v3"
+	"github.com/dop251/goja"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting"
 	meta "github.com/yuin/goldmark-meta"
@@ -23,6 +28,30 @@ type Route struct {
 	FilePath string
 	Href     string
 	Meta     map[string]interface{}
+
+	rawHref string
+	rawMeta map[string]interface{}
+}
+
+var funcMap map[string]interface{}
+
+func init() {
+	funcMap = sprig.FuncMap()
+
+	for k, v := range map[string]interface{}{
+		"sortAsc":         sortAsc,
+		"sortDesc":        sortDesc,
+		"limit":           limit,
+		"offset":          offset,
+		"filter":          filter,
+		"filterHref":      filterHref,
+		"filterFileName":  filterFileName,
+		"filterFilePath":  filterFilePath,
+		"fn":              fn,
+		"toUnescapedJson": toUnescapedJson,
+	} {
+		funcMap[k] = v
+	}
 }
 
 func (r *Route) Generate(outputDir string, allRoutes []Route) error {
@@ -78,16 +107,7 @@ func (r *Route) Generate(outputDir string, allRoutes []Route) error {
 		}
 
 		tmpl := template.New(filepath.Base(tmplPath))
-		tmpl = tmpl.Funcs(map[string]interface{}{
-			"sortAsc":        sortAsc,
-			"sortDesc":       sortDesc,
-			"limit":          limit,
-			"offset":         offset,
-			"filter":         filter,
-			"filterHref":     filterHref,
-			"filterFileName": filterFileName,
-			"filterFilePath": filterFilePath,
-		})
+		tmpl = tmpl.Funcs(funcMap)
 
 		if len(tmplFiles) > 0 {
 			tmpl, err = tmpl.ParseFiles(tmplFiles...)
@@ -135,6 +155,7 @@ func (r Route) AllChildren() []Route {
 	}
 	return allChildren
 }
+
 func (r Route) AllRoutes() []Route {
 	return append([]Route{r}, r.AllChildren()...)
 }
@@ -155,7 +176,7 @@ func LoadRoutes(relPath, baseDir string) (Route, error) {
 
 		for _, child := range fileInfos {
 			if isIndexFile(child) {
-				route.Href = relPath
+				route.rawHref = relPath
 				route.FilePath = filepath.Join(fullPath, child.Name())
 			} else {
 				childRoute, err := LoadRoutes(filepath.Join(relPath, child.Name()), baseDir)
@@ -167,9 +188,11 @@ func LoadRoutes(relPath, baseDir string) (Route, error) {
 		}
 
 	} else {
-		route.Href = filePathToHref(relPath)
+		route.rawHref = filePathToHref(relPath)
 		route.FilePath = fullPath
 	}
+
+	route.Href = route.rawHref
 
 	if route.FilePath != "" {
 		fileContent, err := ioutil.ReadFile(route.FilePath)
@@ -177,13 +200,218 @@ func LoadRoutes(relPath, baseDir string) (Route, error) {
 			return route, err
 		}
 		if strings.HasPrefix(string(fileContent), "---") {
-			if err := yaml.Unmarshal(fileContent, &route.Meta); err != nil {
+			if err := yaml.Unmarshal(fileContent, &route.rawMeta); err != nil {
 				return route, err
+			}
+
+			route.Meta = make(map[string]interface{}, len(route.rawMeta))
+			for k, v := range route.rawMeta {
+				route.Meta[k] = v
 			}
 		}
 	}
 
 	return route, nil
+}
+
+func EvalMetaExpressions(routes []Route) error {
+	for i, r := range routes {
+		for name, val := range r.rawMeta {
+			if str, ok := val.(string); ok && strings.HasPrefix(strings.TrimSpace(str), "{{") {
+				tmplStr := strings.Replace(str, "}}", " | toUnescapedJson }}", -1)
+				tmpl := template.New(r.FilePath)
+				tmpl = tmpl.Funcs(funcMap)
+				tmpl, err := tmpl.Parse(tmplStr)
+				if err != nil {
+					return err
+				}
+
+				tmplCtx := map[string]interface{}{}
+				for k, v := range r.rawMeta {
+					tmplCtx[k] = v
+				}
+				tmplCtx["Route"] = r
+				tmplCtx["Routes"] = routes
+
+				var resultBytes bytes.Buffer
+				if err := tmpl.Execute(&resultBytes, tmplCtx); err != nil {
+					return err
+				}
+
+				var result interface{}
+				if err := json.Unmarshal(resultBytes.Bytes(), &result); err != nil {
+					return err
+				}
+
+				routes[i].Meta[name] = result
+			} else {
+				routes[i].Meta[name] = val
+			}
+		}
+	}
+
+	return nil
+}
+
+func ExpandRoutes(route *Route) error {
+	for {
+
+		oldRoutes := route.AllRoutes()
+		oldHrefs := make([]string, len(oldRoutes))
+		for _, r := range oldRoutes {
+			oldHrefs = append(oldHrefs, r.Href)
+		}
+
+		if err := ExpandDynamicRoutes(route); err != nil {
+			return err
+		}
+
+		newRoutes := route.AllRoutes()
+		newHrefs := make([]string, len(newRoutes))
+		for _, r := range newRoutes {
+			newHrefs = append(newHrefs, r.Href)
+		}
+
+		if isEqualStringSet(oldHrefs, newHrefs) {
+			return nil
+		}
+	}
+}
+
+func isEqualStringSet(a, b []string) bool {
+	aMap := make(map[string]interface{}, len(a))
+	for _, aElem := range a {
+		aMap[aElem] = nil
+	}
+	bMap := make(map[string]interface{}, len(b))
+	for _, bElem := range b {
+		bMap[bElem] = nil
+		if _, ok := aMap[bElem]; !ok {
+			return false
+		}
+	}
+	if len(aMap) != len(bMap) {
+		return false
+	}
+
+	return true
+}
+
+func ExpandDynamicRoutes(route *Route) error {
+	regex := *regexp.MustCompile(`\[([^\]]+)\]`)
+
+	if err := EvalMetaExpressions(route.AllRoutes()); err != nil {
+		return err
+	}
+
+	for _, r := range route.AllRoutes() {
+		matches := regex.FindAllStringSubmatch(r.FilePath, -1)
+		variables := make(map[string][]interface{}, len(matches))
+		for i := range matches {
+			name := strings.TrimSpace(matches[i][1])
+			value := r.Meta[name]
+
+			switch reflect.TypeOf(value).Kind() {
+			case reflect.Slice, reflect.Array:
+				variables[name] = value.([]interface{})
+			default:
+				variables[name] = []interface{}{value}
+			}
+		}
+
+		if len(variables) < 1 {
+			continue
+		}
+
+		variableNames := make([]string, len(variables))
+		variableValues := make([][]interface{}, len(variables))
+		varIdx := 0
+		for varName, varValue := range variables {
+			variableNames[varIdx] = varName
+			variableValues[varIdx] = varValue
+			varIdx += 1
+		}
+
+		permutations := eachPermutation(variableValues...)
+
+		newRoutes := make([]Route, len(permutations))
+
+		for permIdx, permutation := range permutations {
+			href := r.rawHref
+			newRoutes[permIdx] = r
+
+			// TODO improve deep copying
+			newRoutes[permIdx].Meta = make(map[string]interface{}, len(r.Meta))
+			for k, v := range r.Meta {
+				newRoutes[permIdx].Meta[k] = v
+			}
+
+			for varIdx, varName := range variableNames {
+				varValue := permutation[varIdx]
+				regex := *regexp.MustCompile(`\[\s*` + varName + `\s*\]`)
+				href = regex.ReplaceAllString(href, fmt.Sprint(varValue))
+
+				newRoutes[permIdx].Meta[varName] = varValue
+			}
+			newRoutes[permIdx].Href = href
+		}
+
+		replaceAllRoutesForFile(route, r.FilePath, newRoutes)
+	}
+
+	return nil
+}
+
+func replaceAllRoutesForFile(route *Route, filePath string, replaceWith []Route) {
+	oldChildren := route.Children
+	route.Children = make([]Route, 0, len(oldChildren))
+	found := false
+	for _, child := range oldChildren {
+		if child.FilePath != filePath {
+			route.Children = append(route.Children, child)
+		} else {
+			if !found {
+				route.Children = append(route.Children, replaceWith...)
+			}
+			found = true
+		}
+	}
+
+	if found {
+		return
+	}
+
+	for i := range route.Children {
+		replaceAllRoutesForFile(&route.Children[i], filePath, replaceWith)
+	}
+}
+
+func eachPermutation(values ...[]interface{}) [][]interface{} {
+	// [[a, b], [1, 2, 3]]
+	// ->
+	// [[a, 1], [a, 2], [a, 3], [b, 1], [b, 2], [b, 3]]
+
+	length := 0
+	for _, vals := range values {
+		if length == 0 {
+			length = 1
+		}
+		length *= len(vals)
+	}
+
+	permutations := make([][]interface{}, length)
+
+	for i := range permutations {
+		permutations[i] = make([]interface{}, len(values))
+		acc := 1
+		for j := range permutations[i] {
+			permutations[i][j] = values[j][(acc*i*len(values[j])/length)%len(values[j])]
+			acc *= len(values[j])
+		}
+
+	}
+
+	return permutations
 }
 
 func markdownToHTML(src []byte) ([]byte, error) {
@@ -307,4 +535,36 @@ func filterFileName(fileNamePattern string, routes []Route) []Route {
 	}
 
 	return filtered
+}
+
+func fn(source string, args ...interface{}) interface{} {
+	vm := goja.New()
+	v, err := vm.RunString(source)
+	if err != nil {
+		panic(err)
+	}
+
+	f, ok := goja.AssertFunction(v)
+	if !ok {
+		panic("Not a function")
+	}
+
+	jsArgs := make([]goja.Value, len(args))
+
+	for i := 0; i < len(args); i++ {
+		jsArgs[i] = vm.ToValue(args[i])
+	}
+
+	res, err := f(goja.Undefined(), jsArgs...)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return res.Export()
+}
+
+func toUnescapedJson(val interface{}) template.HTML {
+	result, _ := json.Marshal(val)
+	return template.HTML(string(result))
 }
